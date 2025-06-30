@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Lalu Lintas Otomatis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; color: #333; }
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 20px;
+            max-width: 1400px;
+            margin: auto;
+        }
+        .panel {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        .header { grid-column: 1 / 3; text-align: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #0056b3; }
+        .header h2 { margin: 5px 0 0; font-size: 1.2em; color: #666; }
+        .video-panel { grid-row: 2 / 3; }
+        .chart-panel { grid-row: 2 / 3; }
+        .volume-summary-panel { grid-column: 1 / 3; }
+        .daily-chart-panel { grid-column: 1 / 3; }
+        img#video_stream {
+            width: 100%; height: auto; border-radius: 8px; border: 2px solid #ddd;
+        }
+        h3 { margin-top: 0; color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .volume-grid { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; }
+        .volume-item { text-align: center; width: 120px; }
+        .chart-box { position: relative; width: 120px; height: 120px; margin: 0 auto; }
+        .chart-count { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5em; font-weight: bold; color: #555; }
+        .total-chart-box { width: 150px; height: 150px; }
+        .total-chart-count { font-size: 2em; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-doughnut-innertext@1.3.1"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>DIGIBOT</h1>
+            <h2>LALU LINTAS</h2>
+            <p>Berbasis Artificial Intelligence</p>
+        </div>
+
+        <div class="panel volume-summary-panel">
+            <h3>Volume Kendaraan <br>Di update: <span id="last_updated_summary">Loading...</span> WIB</h3>
+            <div class="volume-grid">
+                <div>Normal</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="sm_normal"></canvas><div class="chart-count" id="sm_normal_count">0</div></div>Sepeda Motor</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="mp_normal"></canvas><div class="chart-count" id="mp_normal_count">0</div></div>Mobil Penumpang</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="ks_normal"></canvas><div class="chart-count" id="ks_normal_count">0</div></div>Kendaraan Sedang</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="bb_normal"></canvas><div class="chart-count" id="bb_normal_count">0</div></div>Bus Besar</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="tb_normal"></canvas><div class="chart-count" id="tb_normal_count">0</div></div>Truk Barang</div>
+                <div class="volume-item"><div class="chart-box total-chart-box"><canvas id="total_normal"></canvas><div class="chart-count total-chart-count" id="total_normal_count">0</div></div>Jumlah Total</div>
+
+                <div>Opposite</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="sm_opposite"></canvas><div class="chart-count" id="sm_opposite_count">0</div></div>Sepeda Motor</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="mp_opposite"></canvas><div class="chart-count" id="mp_opposite_count">0</div></div>Mobil Penumpang</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="ks_opposite"></canvas><div class="chart-count" id="ks_opposite_count">0</div></div>Kendaraan Sedang</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="bb_opposite"></canvas><div class="chart-count" id="bb_opposite_count">0</div></div>Bus Besar</div>
+                <div class="volume-item"><div class="chart-box"><canvas id="tb_opposite"></canvas><div class="chart-count" id="tb_opposite_count">0</div></div>Truk Barang</div>
+                <div class="volume-item"><div class="chart-box total-chart-box"><canvas id="total_opposite"></canvas><div class="chart-count total-chart-count" id="total_opposite_count">0</div></div>Jumlah Total</div>
+            </div>
+        </div>
+
+        <div class="panel video-panel">
+            <h3>Perhitungan Kendaraan</h3>
+            <img id="video_stream" src="{{ url_for('video_feed') }}">
+        </div>
+
+        <div class="panel daily-chart-panel">
+            <h3>Volume Kendaraan Harian (kend./jam)</h3>
+            <canvas id="daily_chart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // --- LOGIKA CHART.JS ---
+        const CHART_COLORS = {
+            'Sepeda Motor': 'rgb(128, 0, 128)', // Purple
+            'Mobil Penumpang': 'rgb(255, 165, 0)', // Orange
+            'Kendaraan Sedang': 'rgb(0, 128, 0)', // Green
+            'Bus Besar': 'rgb(0, 191, 255)', // DeepSkyBlue
+            'Truk Barang': 'rgb(128, 128, 128)' // Gray
+        };
+        const CHART_BACKGROUND = 'rgba(200, 200, 200, 0.2)';
+
+        // Function to create a doughnut chart
+        function createDoughnutChart(canvasId) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Count', 'Remaining'],
+                    datasets: [{
+                        data: [0, 1], // Initial data
+                        backgroundColor: [CHART_COLORS['Sepeda Motor'], CHART_BACKGROUND],
+                        borderWidth: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '80%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    }
+                }
+            });
+        }
+        
+        // Create all the doughnut charts
+        const charts = {
+            sm_normal: createDoughnutChart('sm_normal'),
+            mp_normal: createDoughnutChart('mp_normal'),
+            ks_normal: createDoughnutChart('ks_normal'),
+            bb_normal: createDoughnutChart('bb_normal'),
+            tb_normal: createDoughnutChart('tb_normal'),
+            total_normal: createDoughnutChart('total_normal'),
+            sm_opposite: createDoughnutChart('sm_opposite'),
+            mp_opposite: createDoughnutChart('mp_opposite'),
+            ks_opposite: createDoughnutChart('ks_opposite'),
+            bb_opposite: createDoughnutChart('bb_opposite'),
+            tb_opposite: createDoughnutChart('tb_opposite'),
+            total_opposite: createDoughnutChart('total_opposite'),
+        };
+        
+        // Create the daily stacked bar chart
+        const dailyChartCtx = document.getElementById('daily_chart').getContext('2d');
+        const dailyChart = new Chart(dailyChartCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Sepeda Motor',
+                    data: [],
+                    backgroundColor: CHART_COLORS['Sepeda Motor']
+                }, {
+                    label: 'Mobil Penumpang',
+                    data: [],
+                    backgroundColor: CHART_COLORS['Mobil Penumpang']
+                }, {
+                    label: 'Kendaraan Sedang',
+                    data: [],
+                    backgroundColor: CHART_COLORS['Kendaraan Sedang']
+                }, {
+                    label: 'Bus Besar',
+                    data: [],
+                    backgroundColor: CHART_COLORS['Bus Besar']
+                }, {
+                    label: 'Truk Barang',
+                    data: [],
+                    backgroundColor: CHART_COLORS['Truk Barang']
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: { stacked: true },
+                    y: { stacked: true, beginAtZero: true }
+                },
+                plugins: {
+                    title: { display: true, text: 'Volume Harian per Jam' }
+                }
+            }
+        });
+
+        // --- FUNGSI UNTUK MENGAMBIL DATA DARI API ---
+        async function fetchDashboardData() {
+            try {
+                const response = await fetch('/api/dashboard_data');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                
+                // Update Donut Charts for 'Normal' Direction
+                updateDoughnutChart(charts.sm_normal, data.volume_per_category_normal['Sepeda Motor'] || 0, 'sm_normal_count', CHART_COLORS['Sepeda Motor']);
+                updateDoughnutChart(charts.mp_normal, data.volume_per_category_normal['Mobil Penumpang'] || 0, 'mp_normal_count', CHART_COLORS['Mobil Penumpang']);
+                updateDoughnutChart(charts.ks_normal, data.volume_per_category_normal['Kendaraan Sedang'] || 0, 'ks_normal_count', CHART_COLORS['Kendaraan Sedang']);
+                updateDoughnutChart(charts.bb_normal, data.volume_per_category_normal['Bus Besar'] || 0, 'bb_normal_count', CHART_COLORS['Bus Besar']);
+                updateDoughnutChart(charts.tb_normal, data.volume_per_category_normal['Truk Barang'] || 0, 'tb_normal_count', CHART_COLORS['Truk Barang']);
+                
+                // Update Donut Charts for 'Opposite' Direction
+                updateDoughnutChart(charts.sm_opposite, data.volume_per_category_opposite['Sepeda Motor'] || 0, 'sm_opposite_count', CHART_COLORS['Sepeda Motor']);
+                updateDoughnutChart(charts.mp_opposite, data.volume_per_category_opposite['Mobil Penumpang'] || 0, 'mp_opposite_count', CHART_COLORS['Mobil Penumpang']);
+                updateDoughnutChart(charts.ks_opposite, data.volume_per_category_opposite['Kendaraan Sedang'] || 0, 'ks_opposite_count', CHART_COLORS['Kendaraan Sedang']);
+                updateDoughnutChart(charts.bb_opposite, data.volume_per_category_opposite['Bus Besar'] || 0, 'bb_opposite_count', CHART_COLORS['Bus Besar']);
+                updateDoughnutChart(charts.tb_opposite, data.volume_per_category_opposite['Truk Barang'] || 0, 'tb_opposite_count', CHART_COLORS['Truk Barang']);
+                
+                // Update Total Donut Charts
+                const totalNormal = Object.values(data.volume_per_category_normal).reduce((sum, count) => sum + count, 0);
+                const totalOpposite = Object.values(data.volume_per_category_opposite).reduce((sum, count) => sum + count, 0);
+                updateDoughnutChart(charts.total_normal, totalNormal, 'total_normal_count', 'rgb(75, 192, 192)'); // Green
+                updateDoughnutChart(charts.total_opposite, totalOpposite, 'total_opposite_count', 'rgb(75, 192, 192)'); // Green
+
+                // Update Daily Bar Chart
+                updateDailyChart(data.daily_volume_hourly);
+
+                // Update timestamp
+                document.getElementById('last_updated_summary').textContent = data.timestamp;
+
+            } catch (error) {
+                console.error("Could not fetch dashboard data:", error);
+            }
+        }
+        
+        function updateDoughnutChart(chart, count, countElementId, color) {
+            chart.data.datasets[0].data = [count, 1]; // The '1' is a placeholder for the full circle
+            chart.data.datasets[0].backgroundColor = [color, CHART_BACKGROUND];
+            document.getElementById(countElementId).textContent = count;
+            chart.update();
+        }
+
+        function updateDailyChart(hourlyData) {
+            const labels = Object.keys(hourlyData).sort();
+            const datasets = dailyChart.data.datasets;
+
+            datasets[0].data = labels.map(hour => hourlyData[hour]['Sepeda Motor'] || 0);
+            datasets[1].data = labels.map(hour => hourlyData[hour]['Mobil Penumpang'] || 0);
+            datasets[2].data = labels.map(hour => hourlyData[hour]['Kendaraan Sedang'] || 0);
+            datasets[3].data = labels.map(hour => hourlyData[hour]['Bus Besar'] || 0);
+            datasets[4].data = labels.map(hour => hourlyData[hour]['Truk Barang'] || 0);
+            
+            dailyChart.data.labels = labels;
+            dailyChart.update();
+        }
+
+        // Ambil data setiap 5 detik
+        setInterval(fetchDashboardData, 5000); 
+        
+        // Ambil data pertama kali saat halaman dimuat
+        fetchDashboardData();
+
+    </script>
+</body>
+</html>
